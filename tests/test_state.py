@@ -73,3 +73,10 @@ def test_next_action_walks_forward(tmp_path):
     assert "run" in state.next_action()
     state.write(Stage.RUN, Status.OK)
     assert state.next_action() == "run complete"
+
+
+def test_recorded_run_details_survive_environment_changes(tmp_path):
+    """A finished run is described by what it did, not by the current env."""
+    state = RunState(tmp_path)
+    state.write(Stage.RUN, Status.OK, base_model="tiny/model-actually-used")
+    assert state.read(Stage.RUN).detail["base_model"] == "tiny/model-actually-used"

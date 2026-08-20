@@ -135,7 +135,12 @@ def resolve_params(preset: Preset) -> Params:
         raise WorkflowError("workflow preset declares no base_models")
 
     model_ids = [str(m.get("id")) for m in models]
-    base_model = _env("BASE_MODEL") or model_ids[0]
+    # Smoke-only models verify the pipeline; they must never be selected by
+    # omission, only by an explicit choice.
+    selectable = [str(m.get("id")) for m in models if not m.get("smoke_only")]
+    base_model = _env("BASE_MODEL") or (selectable[0] if selectable else "")
+    if not base_model:
+        raise WorkflowError("workflow preset has no selectable base model")
     if base_model not in model_ids:
         raise WorkflowError(
             f"base_model {base_model!r} is not in this preset's catalog. Allowed: {', '.join(model_ids)}"

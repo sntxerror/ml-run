@@ -41,6 +41,20 @@ def _echo_progress(line: str) -> None:
     console.print(f"[dim]{line}[/dim]", markup=False, highlight=False)
 
 
+def _effective_model(state: RunState, params: Params) -> tuple[str, bool]:
+    """What this run actually used, falling back to what it would use.
+
+    A finished run must not be described by the current environment: env vars
+    can change between invocations, and reporting the default over a completed
+    run's real model would be a plain lie about what was trained.
+    """
+    for stage in (Stage.RUN, Stage.TEST_RUN):
+        recorded = state.read(stage).detail.get("base_model")
+        if recorded:
+            return str(recorded), True
+    return params.base_model, False
+
+
 def _fail(message: str) -> None:
     err_console.print(f"[red]error:[/red] {message}")
     raise typer.Exit(code=2)
@@ -71,11 +85,14 @@ def status(as_json: Annotated[bool, typer.Option("--json", help="Machine-readabl
     preset, params, state = _context()
     summaries = state.all_summaries()
 
+    model, from_run = _effective_model(state, params)
+
     if as_json:
         console.print_json(
             data={
                 "workflow": preset.kind,
-                "base_model": params.base_model,
+                "base_model": model,
+                "base_model_is_from_run": from_run,
                 "training_mode": params.training_mode,
                 "run_mode": params.run_mode,
                 "next_action": state.next_action(),
@@ -87,7 +104,7 @@ def status(as_json: Annotated[bool, typer.Option("--json", help="Machine-readabl
     console.print(
         Panel(
             f"[bold]{preset.name}[/bold]\n"
-            f"model: {params.base_model}\n"
+            f"model: {model}" + ("" if from_run else "  [dim](selected; not yet run)[/dim]") + "\n"
             f"mode:  {params.training_mode}  ({params.run_mode})",
             title="workflow",
             expand=False,

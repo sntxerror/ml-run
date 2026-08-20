@@ -77,3 +77,19 @@ def test_unavailable_run_modes_are_refused_with_a_useful_message(preset, monkeyp
 def test_missing_preset_is_a_clear_error(tmp_path):
     with pytest.raises(WorkflowError, match="not found"):
         load_preset(tmp_path / "nope.yaml")
+
+
+def test_smoke_only_model_is_never_selected_by_omission(preset):
+    smoke_only = [m["id"] for m in preset.base_models if m.get("smoke_only")]
+    if not smoke_only:
+        pytest.skip("preset declares no smoke-only models")
+    chosen = resolve_params(preset).base_model
+    assert chosen not in smoke_only, "a smoke-only model must not be the default"
+
+
+def test_smoke_only_model_remains_explicitly_selectable(preset, monkeypatch):
+    smoke_only = [m["id"] for m in preset.base_models if m.get("smoke_only")]
+    if not smoke_only:
+        pytest.skip("preset declares no smoke-only models")
+    monkeypatch.setenv("ANTGPU_RUN_BASE_MODEL", smoke_only[0])
+    assert resolve_params(preset).base_model == smoke_only[0]

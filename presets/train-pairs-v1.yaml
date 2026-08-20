@@ -29,10 +29,19 @@ paths:
 # Only these models may be selected. The trainer needs a full Transformers
 # checkpoint; GGUF is rejected by antgpu-train.
 base_models:
+  - id: trl-internal-testing/tiny-Qwen2ForCausalLM-2.5
+    label: Tiny Qwen2 (verification only)
+    min_vram_gb: 0
+    smoke_only: true
+    notes: >-
+      A few megabytes, two layers, randomly initialised weights. Same Qwen2
+      architecture as the real models, so it exercises the identical code path
+      in seconds. Use it to prove the pipeline works end to end. It cannot
+      produce a useful adapter.
   - id: Qwen/Qwen2.5-0.5B-Instruct
     label: Qwen2.5 0.5B Instruct
     min_vram_gb: 0
-    notes: CPU-capable. Used for local verification and smoke runs.
+    notes: Smallest real model. CPU-capable, though slow.
   - id: Qwen/Qwen2.5-7B-Instruct
     label: Qwen2.5 7B Instruct
     min_vram_gb: 8
