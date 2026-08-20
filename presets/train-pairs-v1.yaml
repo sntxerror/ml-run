@@ -1,0 +1,94 @@
+schema_version: 1
+kind: train-pairs-v1
+name: LoRA fine-tune from Q/A pairs
+description: >-
+  Fine-tune a chat model on a prepared question/answer pair dataset in
+  chat-messages-v1 JSONL format.
+
+# Run modes. Only interactive_sandbox is implemented; the others are declared so
+# the form and the API contract are stable before the features land.
+run_modes:
+  interactive_sandbox:
+    available: true
+    description: SSH sandbox; the user drives each step with the CLI.
+  keepalive_detached:
+    available: false
+    description: Training runs detached, container stays up for inspection.
+  job_no_shell:
+    available: false
+    description: Run to completion and exit; no interactive access.
+default_run_mode: interactive_sandbox
+
+# Container-side layout. Must match the template's mount contract.
+paths:
+  dataset_dir: /workspace/input
+  output_dir: /workspace/output
+  run_dir: /workspace/run
+  cache_dir: /cache/huggingface
+
+# Only these models may be selected. The trainer needs a full Transformers
+# checkpoint; GGUF is rejected by antgpu-train.
+base_models:
+  - id: Qwen/Qwen2.5-0.5B-Instruct
+    label: Qwen2.5 0.5B Instruct
+    min_vram_gb: 0
+    notes: CPU-capable. Used for local verification and smoke runs.
+  - id: Qwen/Qwen2.5-7B-Instruct
+    label: Qwen2.5 7B Instruct
+    min_vram_gb: 8
+  - id: mistralai/Mistral-7B-Instruct-v0.3
+    label: Mistral 7B Instruct v0.3
+    min_vram_gb: 8
+
+# Server-owned presets. The campaign creator picks a name, not a learning rate.
+training_modes:
+  economical:
+    label: Economical
+    method: qlora
+    max_sequence_length: 1024
+    epochs: 1
+    per_device_batch_size: 1
+    gradient_accumulation_steps: 8
+    learning_rate: 0.0002
+    lora: { rank: 8, alpha: 16, dropout: 0.05 }
+  balanced:
+    label: Balanced
+    method: qlora
+    max_sequence_length: 2048
+    epochs: 2
+    per_device_batch_size: 1
+    gradient_accumulation_steps: 4
+    learning_rate: 0.0002
+    lora: { rank: 16, alpha: 32, dropout: 0.05 }
+  quality:
+    label: Quality
+    method: lora
+    max_sequence_length: 4096
+    epochs: 3
+    per_device_batch_size: 1
+    gradient_accumulation_steps: 4
+    learning_rate: 0.0001
+    lora: { rank: 32, alpha: 64, dropout: 0.05 }
+default_training_mode: balanced
+
+# The test run must be cheap and conclusive: it proves the model loads, the
+# dataset tokenizes, a step runs and a checkpoint writes.
+test_run:
+  max_steps: 2
+  save_steps: 1
+  save_total_limit: 1
+
+dataset:
+  format: chat-messages-v1
+  train_file: train.jsonl
+  validation_file: validation.jsonl
+  min_examples: 4
+
+# Bounds applied to anything a caller supplies. Values outside these are
+# rejected rather than clamped, so a bad form value is visible.
+bounds:
+  epochs: { min: 0.1, max: 10 }
+  max_sequence_length: { min: 128, max: 8192 }
+  per_device_batch_size: { min: 1, max: 8 }
+  gradient_accumulation_steps: { min: 1, max: 64 }
+  learning_rate: { min: 0.000001, max: 0.01 }
