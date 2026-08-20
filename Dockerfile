@@ -17,7 +17,10 @@ COPY src ./src
 
 # Installed into the trainer's own venv so `antgpu-run` and `antgpu-train` share
 # an interpreter and one is always able to invoke the other.
-RUN /app/.venv/bin/python -m pip install --no-cache-dir .
+#
+# uv is used rather than pip: the trainer image builds its venv with `uv sync`,
+# which does not seed pip, so `python -m pip` does not exist there.
+RUN uv pip install --python /app/.venv/bin/python --no-cache .
 
 # Baked in so the container is self-describing: the run can be inspected without
 # asking the control plane what it was launched with.
