@@ -70,12 +70,18 @@ def _context() -> tuple[Preset, Params, RunState]:
     return preset, params, RunState(preset.paths.run_dir)
 
 
-@app.callback()
+# invoke_without_command is required for --version: without it Typer rejects the
+# call for having no subcommand before the callback ever runs.
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     version: Annotated[bool, typer.Option("--version", help="Print version and exit.")] = False,
 ) -> None:
     if version:
         console.print(__version__)
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
         raise typer.Exit()
 
 

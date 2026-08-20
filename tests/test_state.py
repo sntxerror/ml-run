@@ -80,3 +80,18 @@ def test_recorded_run_details_survive_environment_changes(tmp_path):
     state = RunState(tmp_path)
     state.write(Stage.RUN, Status.OK, base_model="tiny/model-actually-used")
     assert state.read(Stage.RUN).detail["base_model"] == "tiny/model-actually-used"
+
+
+def test_version_flag_does_not_require_a_subcommand():
+    """`--version` must work on its own; Typer rejects it without
+    invoke_without_command on the callback."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "antgpu_run.cli", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip()
