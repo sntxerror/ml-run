@@ -36,6 +36,11 @@ STATUS_STYLE = {
 }
 
 
+def _echo_progress(line: str) -> None:
+    """Mirror trainer progress to the terminal as it arrives."""
+    console.print(f"[dim]{line}[/dim]", markup=False, highlight=False)
+
+
 def _fail(message: str) -> None:
     err_console.print(f"[red]error:[/red] {message}")
     raise typer.Exit(code=2)
@@ -209,7 +214,11 @@ def test_run() -> None:
     console.print(f"test run: {params.base_model}, {config.get('max_steps')} steps. "
                   "The base model is downloaded on first use; this can take a while.")
     try:
-        result = invoke_trainer(config_path, log_path=state.log_path(Stage.TEST_RUN))
+        result = invoke_trainer(
+            config_path,
+            log_path=state.log_path(Stage.TEST_RUN),
+            echo=_echo_progress,
+        )
     except TrainerError as exc:
         state.write(Stage.TEST_RUN, Status.FAILED, error=str(exc))
         _fail(str(exc))
@@ -299,7 +308,12 @@ def run(
 
     console.print(f"training {params.base_model} ({params.training_mode}) -> {config['output_dir']}")
     try:
-        result = invoke_trainer(config_path, resume=resume, log_path=state.log_path(Stage.RUN))
+        result = invoke_trainer(
+            config_path,
+            resume=resume,
+            log_path=state.log_path(Stage.RUN),
+            echo=_echo_progress,
+        )
     except TrainerError as exc:
         state.write(Stage.RUN, Status.FAILED, error=str(exc))
         _fail(str(exc))

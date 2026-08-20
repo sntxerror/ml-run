@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -80,10 +81,14 @@ def invoke_trainer(
     dry_run: bool = False,
     resume: bool = False,
     log_path: Path | None = None,
+    echo: Callable[[str], None] | None = None,
 ) -> TrainerResult:
-    """Run the trainer, streaming its progress to ``log_path``.
+    """Run the trainer, streaming its progress to ``log_path`` as it happens.
 
     The trainer writes progress to stderr and a single JSON result to stdout.
+    Progress is written through to the log file line by line rather than
+    collected and flushed at the end: a training run can last hours, and the
+    whole point of the log is that the user can watch it while it runs.
     """
     command = [TRAINER_BINARY, "train", "--config", str(config_path)]
     if dry_run:
@@ -91,30 +96,47 @@ def invoke_trainer(
     if resume:
         command.append("--resume")
 
+    log_handle = None
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = log_path.open("w", encoding="utf-8", buffering=1)
+        log_handle.write(f"$ {' '.join(command)}\n\n")
 
+    stderr_lines: list[str] = []
     try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise TrainerError(
-            f"{TRAINER_BINARY} is not installed in this image. "
-            "The runner image must be built on top of the trainer image."
-        ) from exc
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError as exc:
+            raise TrainerError(
+                f"{TRAINER_BINARY} is not installed in this image. "
+                "The runner image must be built on top of the trainer image."
+            ) from exc
 
-    if log_path is not None:
-        log_path.write_text(
-            f"$ {' '.join(command)}\n\n{completed.stderr}\n{completed.stdout}\n",
-            encoding="utf-8",
-        )
+        assert process.stderr is not None
+        for line in process.stderr:
+            line = line.rstrip("\n")
+            stderr_lines.append(line)
+            if log_handle is not None:
+                log_handle.write(line + "\n")
+            if echo is not None:
+                echo(line)
+
+        stdout, _ = process.communicate()
+        exit_code = process.returncode
+        if log_handle is not None and stdout:
+            log_handle.write("\n" + stdout)
+    finally:
+        if log_handle is not None:
+            log_handle.close()
 
     payload: dict[str, Any] = {}
-    stdout = completed.stdout.strip()
+    stdout = (stdout or "").strip()
     if stdout:
         try:
             parsed = json.loads(stdout.splitlines()[-1])
@@ -123,5 +145,5 @@ def invoke_trainer(
         except json.JSONDecodeError:
             payload = {"raw_stdout": stdout[-2000:]}
 
-    stderr_tail = "\n".join(completed.stderr.strip().splitlines()[-20:])
-    return TrainerResult(exit_code=completed.returncode, payload=payload, stderr_tail=stderr_tail)
+    stderr_tail = "\n".join(stderr_lines[-20:])
+    return TrainerResult(exit_code=exit_code, payload=payload, stderr_tail=stderr_tail)

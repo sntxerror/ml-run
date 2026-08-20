@@ -70,3 +70,44 @@ def test_missing_trainer_binary_is_explained(monkeypatch, tmp_path):
     config_path.write_text("schema_version: 1\n", encoding="utf-8")
     with pytest.raises(TrainerError, match="built on top of the trainer image"):
         invoke_trainer(config_path)
+
+
+def test_progress_is_written_to_the_log_while_the_process_runs(tmp_path, monkeypatch):
+    """A training run can last hours; the log must not appear only at the end."""
+    script = tmp_path / "fake-trainer"
+    script.write_text(
+        "#!/bin/sh\n"
+        "echo 'step 1' >&2\n"
+        "echo \"$(cat /dev/null)\" >/dev/null\n"
+        "while [ ! -f %s ]; do sleep 0.05; done\n"
+        "echo 'step 2' >&2\n"
+        'echo \'{"ok": true}\'\n' % (tmp_path / "release"),
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    monkeypatch.setattr("antgpu_run.trainer.TRAINER_BINARY", str(script))
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("schema_version: 1\n", encoding="utf-8")
+    log_path = tmp_path / "output.log"
+
+    import threading
+
+    def release_once_first_line_lands():
+        for _ in range(200):
+            if log_path.is_file() and "step 1" in log_path.read_text(encoding="utf-8"):
+                (tmp_path / "release").write_text("go", encoding="utf-8")
+                return
+            __import__("time").sleep(0.05)
+        # Release anyway so the test fails on the assertion, not by hanging.
+        (tmp_path / "release").write_text("go", encoding="utf-8")
+
+    watcher = threading.Thread(target=release_once_first_line_lands)
+    watcher.start()
+    result = invoke_trainer(config_path, log_path=log_path)
+    watcher.join()
+
+    assert result.ok
+    assert result.payload == {"ok": True}
+    contents = log_path.read_text(encoding="utf-8")
+    assert "step 1" in contents and "step 2" in contents
